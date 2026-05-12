@@ -29,7 +29,7 @@ interface DiagnosticInput {
   help?: string;
   packageName?: string;
   replacement?: string;
-  alsoIn?: string[];
+  alsoIn?: Array<{ filePath: string; line?: number }>;
 }
 
 interface CodeRule {
@@ -92,7 +92,7 @@ const createCompatDiagnostic = (
   entry: CompatEntry,
   manifest: PackageManifest,
   needsTrust: boolean,
-  alsoIn?: string[],
+  alsoIn?: Array<{ filePath: string; line?: number }>,
 ): Diagnostic =>
   createDiagnostic({
     ruleId: `compat/${entry.packageName}`,
@@ -339,7 +339,10 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
         manifest.trustedDependencies.has(entry.packageName),
       );
       const needsTrust = Boolean(entry.requiresTrustedDependency) && !isTrustedEverywhere;
-      const alsoIn = otherManifests.map((manifest) => manifest.packageJsonPath);
+      const alsoIn = otherManifests.map((manifest) => ({
+        filePath: manifest.packageJsonPath,
+        line: findDependencyLine(manifest.manifestContent, entry.packageName),
+      }));
       diagnostics.push(createCompatDiagnostic(entry, primaryManifest, needsTrust, alsoIn));
       continue;
     }

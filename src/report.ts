@@ -49,8 +49,10 @@ export const formatTextReport = (result: ScanResult, verbose: boolean): string =
   lines.push(
     `${pc.dim("Bun Readiness:")} ${scoreColor(pc.bold(`${result.score.score}/100`))} ${pc.dim(`(${result.score.label})`)}`,
   );
+  const colorCount = (count: number, color: (input: string) => string, label: string): string =>
+    count === 0 ? pc.dim(`${count} ${label}`) : color(`${count} ${label}`);
   lines.push(
-    `${pc.dim("Findings:")} ${pc.red(`${result.summary.blockers} blockers`)}, ${pc.yellow(`${result.summary.risks} risks`)}, ${pc.cyan(`${result.summary.migrations} migration`)}, ${pc.green(`${result.summary.wins} wins`)}`,
+    `${pc.dim("Findings:")} ${colorCount(result.summary.blockers, pc.red, "blockers")}, ${colorCount(result.summary.risks, pc.yellow, "risks")}, ${colorCount(result.summary.migrations, pc.cyan, "migration")}, ${colorCount(result.summary.wins, pc.green, "wins")}`,
   );
   lines.push("");
 
@@ -71,12 +73,15 @@ export const formatTextReport = (result: ScanResult, verbose: boolean): string =
       const symbol = LEVEL_COLOR[diagnostic.level](LEVEL_SYMBOL[diagnostic.level]);
       lines.push(`  ${symbol} ${pc.bold(diagnostic.title)} ${pc.dim(`[${diagnostic.ruleId}]`)}`);
       lines.push(`    ${diagnostic.message}`);
-      if (diagnostic.replacement) lines.push(`    ${pc.green(`→ ${diagnostic.replacement}`)}`);
+      if (diagnostic.replacement) lines.push(`    ${pc.dim("Use")} ${pc.green(diagnostic.replacement)}`);
       if (diagnostic.help) lines.push(`    ${pc.dim(diagnostic.help)}`);
       lines.push(`    ${pc.cyan(formatLocation(diagnostic, result.project.rootDirectory))}`);
       if (diagnostic.alsoIn && diagnostic.alsoIn.length > 0) {
         const aggregated = diagnostic.alsoIn
-          .map((alsoPath) => toRelativePath(path.resolve(alsoPath), result.project.rootDirectory))
+          .map((alsoLocation) => {
+            const relative = toRelativePath(path.resolve(alsoLocation.filePath), result.project.rootDirectory);
+            return alsoLocation.line && alsoLocation.line > 1 ? `${relative}:${alsoLocation.line}` : relative;
+          })
           .join(", ");
         lines.push(`    ${pc.dim(`Also in: ${aggregated}`)}`);
       }

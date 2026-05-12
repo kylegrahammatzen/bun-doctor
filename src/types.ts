@@ -105,7 +105,7 @@ export interface Diagnostic {
   help?: string;
   packageName?: string;
   replacement?: string;
-  alsoIn?: string[];
+  alsoIn?: Array<{ filePath: string; line?: number }>;
 }
 
 export interface ScoreResult {

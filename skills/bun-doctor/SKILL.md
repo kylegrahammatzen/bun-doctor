@@ -1,7 +1,7 @@
 ---
 name: bun-doctor
 description: Use after making dependency, CI, package manager, test runner, or Node runtime changes in a project that uses or is migrating to Bun. Checks Bun readiness and migration risk.
-version: "1.0.0"
+version: "0.0.3"
 ---
 
 # Bun Doctor
