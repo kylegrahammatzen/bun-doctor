@@ -73,16 +73,17 @@ export const formatTextReport = (result: ScanResult, options: TextReportOptions)
   const projectLine = [`${pc.dim("Project:")} ${result.project.packageName}`];
   if (result.project.gitRepositoryUrl) projectLine.push(`${pc.dim("Repo:")} ${result.project.gitRepositoryUrl}`);
   lines.push(projectLine.join("  "));
-  if (result.project.gitUpstreamUrl && result.project.gitUpstreamUrl !== result.project.gitRepositoryUrl) {
-    lines.push(`${pc.dim("Upstream:")} ${result.project.gitUpstreamUrl}`);
-  }
   lines.push(`${pc.dim("Status:")} ${scoreColor(pc.bold(result.score.label))}`);
   lines.push(`${pc.dim("Score:")} ${scoreColor(pc.bold(`${result.score.score}/100`))}`);
-  const colorCount = (count: number, color: (input: string) => string, label: string): string =>
-    count === 0 ? pc.dim(`${count} ${label}`) : color(`${count} ${label}`);
-  lines.push(
-    `${pc.dim("Summary:")} ${colorCount(result.summary.blockers, pc.red, "blockers")}, ${colorCount(result.summary.risks, pc.yellow, "risks")}, ${colorCount(result.summary.migrations, pc.cyan, "tasks")}, ${colorCount(result.summary.wins, pc.green, "optional wins")}`,
-  );
+  const summaryItems = [
+    { count: result.summary.blockers, singular: "blocker", plural: "blockers", color: pc.red },
+    { count: result.summary.risks, singular: "risk", plural: "risks", color: pc.yellow },
+    { count: result.summary.migrations, singular: "task", plural: "tasks", color: pc.cyan },
+    { count: result.summary.wins, singular: "optional win", plural: "optional wins", color: pc.green },
+  ]
+    .filter((item) => item.count > 0)
+    .map((item) => item.color(`${item.count} ${item.count === 1 ? item.singular : item.plural}`));
+  if (summaryItems.length > 0) lines.push(`${pc.dim("Summary:")} ${summaryItems.join(", ")}`);
   lines.push("");
 
   if (result.diagnostics.length === 0) {
@@ -98,8 +99,8 @@ export const formatTextReport = (result: ScanResult, options: TextReportOptions)
     const categoryColor = firstLevel ? LEVEL_COLOR[firstLevel] : pc.white;
     lines.push(pc.bold(categoryColor(`${CATEGORY_TITLE[category]} (${diagnostics.length})`)));
     if (category === "Bun wins" && !options.verbose && !options.showWins) {
-      lines.push(`  ${pc.dim(formatWinSummary(diagnostics))}`);
-      lines.push(`  ${pc.dim("Run with --wins to review optional wins.")}`);
+      lines.push(`  ${pc.green(formatWinSummary(diagnostics))}`);
+      lines.push(`  Run with ${pc.green("--wins")} to review optional wins.`);
       lines.push("");
       continue;
     }
@@ -117,14 +118,14 @@ export const formatTextReport = (result: ScanResult, options: TextReportOptions)
           const aggregated = diagnostic.alsoIn
             .map((alsoLocation) => formatLocation(alsoLocation, result.project.rootDirectory))
             .join(", ");
-          lines.push(`    ${pc.dim(`Repeated in: ${aggregated}`)}`);
+          lines.push(`    ${pc.magenta(`Repeated in: ${aggregated}`)}`);
         } else {
           const locationLabel = diagnostic.alsoIn.length === 1 ? "location" : "locations";
-          lines.push(`    ${pc.dim(`Repeated in ${diagnostic.alsoIn.length} more ${locationLabel}`)}`);
+          lines.push(`    ${pc.magenta(`Repeated in ${diagnostic.alsoIn.length} more ${locationLabel}`)}`);
         }
       }
       if (options.verbose || diagnostic.level === "blocker" || diagnostic.level === "risk") {
-        lines.push(`    ${pc.dim(`Docs: ${diagnostic.sources[0]}`)}`);
+        lines.push(`    ${pc.blue(`Docs: ${diagnostic.sources[0]}`)}`);
       }
     }
     if (!shouldShowAllDiagnostics && diagnostics.length > shownDiagnostics.length) {
