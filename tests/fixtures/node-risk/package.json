@@ -1,0 +1,10 @@
+{
+  "name": "node-risk",
+  "type": "module",
+  "dependencies": {
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "jest": "^30.0.0"
+  }
+}
