@@ -1,6 +1,6 @@
 {
   "name": "bun-doctor",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Diagnose Node-to-Bun migration readiness for JavaScript and TypeScript projects",
   "keywords": [
     "bun",

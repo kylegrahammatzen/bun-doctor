@@ -1,26 +1,15 @@
 # Bun Doctor
 
-Diagnose Node-to-Bun migration readiness for JavaScript and TypeScript projects.
+[![version](https://img.shields.io/npm/v/bun-doctor?style=flat&colorA=000000&colorB=000000)](https://npmjs.com/package/bun-doctor)
+[![downloads](https://img.shields.io/npm/dt/bun-doctor.svg?style=flat&colorA=000000&colorB=000000)](https://npmjs.com/package/bun-doctor)
 
-`bun-doctor` answers one question:
-
-> Can this repo safely move to Bun, and what exact changes get it there?
-
-It scans package manager state, lockfiles, Bun config, TypeScript config, CI workflows, dependency risk, and a first pass of Bun-specific code risks. The output is a 0-100 Bun Readiness score grouped into Blockers, Risks, Migration work, and Bun wins.
-
-## Usage
+Scan a Node.js project to see how ready it is to move to Bun.
 
 ```bash
 npx -y bun-doctor@latest .
 ```
 
-Local development from this repo:
-
-```bash
-bun install
-bun run build
-node dist/cli.mjs . --verbose
-```
+You get a 0-100 Bun Readiness score and a grouped list of Blockers, Risks, Migration work, and Bun wins. The scanner inspects package manager state, lockfiles, `bunfig.toml`, `tsconfig.json`, GitHub Actions workflows, dependency compatibility, and Bun-specific code risks.
 
 ## CLI
 
@@ -43,21 +32,41 @@ Commands:
 
 ## Scoring
 
-The score starts at 100 and subtracts for unique triggered rules:
+Each unique rule triggered subtracts from a starting score of 100:
 
-- Blocker: 12 points
-- Risk: 5 points
-- Migration work: 2 points
-- Bun win: 0 points
+| Level | Penalty |
+| --- | ---: |
+| Blocker | 12 |
+| Risk | 5 |
+| Migration | 2 |
+| Win | 0 |
 
-Bun wins are shown as opportunities but do not lower readiness.
+Wins are surfaced as optional Bun-native simplifications and never lower the score.
 
-## Rule Sources
+## GitHub Action
 
-Every diagnostic has at least one verifiable source: Bun docs, compatibility docs, or an issue/test link in the compatibility database. No source means no rule.
+Drop this into `.github/workflows/bun-doctor.yml`:
+
+```yaml
+name: Bun Doctor
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  bun-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: kylegrahammatzen/bun-doctor@main
+```
+
+## Sources
+
+Every diagnostic and compatibility entry carries at least one verifiable source: Bun documentation, the Node compatibility table, or an issue/test link. No source, no rule.
 
 ## Roadmap
 
-- MVP: CLI, JSON, score, config/package rules, code-risk scans, compatibility DB v0.
-- v1.0: public eval harness that verifies compatibility DB entries across Bun versions and platforms.
+- MVP: CLI, JSON, score, package/config rules, code-risk scans, compatibility DB v0.
+- v1.0: public eval harness that verifies compatibility entries across Bun versions and platforms ([docs/eval-harness.md](docs/eval-harness.md)).
 - Later: editor/linter plugin once rules prove useful in real migrations.
