@@ -43,11 +43,12 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "prepack": "bun run build",
+    "prepack": "bun run version:sync && bun run build",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "bun run typecheck && bun test && bun run build",
-    "docs:refresh": "bun run scripts/refresh-bun-docs.ts"
+    "docs:refresh": "bun run scripts/refresh-bun-docs.ts",
+    "version:sync": "bun run scripts/sync-skill-version.ts"
   },
   "engines": {
     "node": ">=20"
