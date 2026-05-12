@@ -2,7 +2,7 @@ export type FindingLevel = "blocker" | "risk" | "migration" | "win";
 
 export type FindingCategory = "Blockers" | "Risks" | "Migration work" | "Bun wins";
 
-export type FailOnLevel = FindingLevel | "none";
+export type FailOnLevel = "blocker" | "risk" | "migration" | "none";
 
 export interface PackageJson {
   name?: string;

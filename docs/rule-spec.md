@@ -8,8 +8,8 @@ The primary output is a 0-100 Bun Readiness score with findings grouped by user 
 
 - Blockers: likely to fail under Bun or in Bun-based CI.
 - Risks: likely to work in common cases, but affected by unsupported Node APIs, platform differences, native packages, or lifecycle behavior.
-- Migration work: repo/config/tooling changes needed for a clean Bun migration.
-- Bun wins: optional simplifications or performance improvements. These never reduce the score.
+- Migration tasks: repo/config/tooling changes needed for a clean Bun migration.
+- Optional wins: optional simplifications or performance improvements. These never reduce the score.
 
 ## Severity Model
 

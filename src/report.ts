@@ -103,7 +103,8 @@ export const formatTextReport = (result: ScanResult, options: TextReportOptions)
       lines.push("");
       continue;
     }
-    const shownDiagnostics = options.verbose ? diagnostics : diagnostics.slice(0, 3);
+    const shouldShowAllDiagnostics = options.verbose || (category === "Bun wins" && options.showWins);
+    const shownDiagnostics = shouldShowAllDiagnostics ? diagnostics : diagnostics.slice(0, 3);
     for (const diagnostic of shownDiagnostics) {
       const symbol = LEVEL_COLOR[diagnostic.level](LEVEL_SYMBOL[diagnostic.level]);
       lines.push(`  ${symbol} ${pc.bold(diagnostic.title)} ${pc.dim(`[${diagnostic.ruleId}]`)}`);
@@ -126,7 +127,7 @@ export const formatTextReport = (result: ScanResult, options: TextReportOptions)
         lines.push(`    ${pc.dim(`Docs: ${diagnostic.sources[0]}`)}`);
       }
     }
-    if (!options.verbose && diagnostics.length > shownDiagnostics.length) {
+    if (!shouldShowAllDiagnostics && diagnostics.length > shownDiagnostics.length) {
       const hidden = diagnostics.length - shownDiagnostics.length;
       lines.push(`  ${pc.dim(`${hidden} more hidden. Run with --verbose to show all findings.`)}`);
     }

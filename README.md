@@ -11,7 +11,7 @@ Inspired by [React Doctor](https://github.com/millionco/react-doctor) by Million
 npx -y bun-doctor@latest .
 ```
 
-You get a 0-100 Bun Readiness score and a grouped list of Blockers, Risks, Migration work, and Bun wins. The scanner inspects package manager state, lockfiles, `bunfig.toml`, `tsconfig.json`, GitHub Actions workflows, dependency compatibility, and Bun-specific code risks.
+You get a 0-100 readiness score and a grouped list of Blockers, Risks, Migration tasks, and Optional wins. The scanner inspects package manager state, lockfiles, `bunfig.toml`, `tsconfig.json`, GitHub Actions workflows, dependency compatibility, and Bun-specific code risks.
 
 ## CLI
 
@@ -22,6 +22,7 @@ Options:
   --json                  output a structured JSON report
   --score                 output only the numeric score
   --verbose               show every diagnostic
+  --wins                  show all optional Bun-native wins
   --no-package            skip package/config/dependency checks
   --no-code               skip source code checks
   --fail-on <level>       exit non-zero on blocker, risk, migration, or none

@@ -17,7 +17,7 @@ interface CliFlags {
   failOn: FailOnLevel;
 }
 
-const VALID_FAIL_ON_LEVELS = new Set<FailOnLevel>(["blocker", "risk", "migration", "win", "none"]);
+const VALID_FAIL_ON_LEVELS = new Set<FailOnLevel>(["blocker", "risk", "migration", "none"]);
 
 const HELP_TEXT = `Usage: bun-doctor [directory] [options]
 
@@ -25,7 +25,7 @@ Options:
   --json                  output a structured JSON report
   --score                 output only the numeric score
   --verbose               show every diagnostic
-  --wins                  show optional Bun-native wins
+  --wins                  show all optional Bun-native wins
   --no-package            skip package/config/dependency checks
   --no-code               skip source code checks
   --fail-on <level>       exit non-zero on blocker, risk, migration, or none
@@ -38,7 +38,6 @@ Commands:
 
 const shouldFail = (levels: Set<string>, failOn: FailOnLevel): boolean => {
   if (failOn === "none") return false;
-  if (failOn === "win") return levels.size > 0;
   if (failOn === "migration") return levels.has("blocker") || levels.has("risk") || levels.has("migration");
   if (failOn === "risk") return levels.has("blocker") || levels.has("risk");
   return levels.has("blocker");
@@ -47,7 +46,13 @@ const shouldFail = (levels: Set<string>, failOn: FailOnLevel): boolean => {
 const parseFailOn = (value: string | undefined): FailOnLevel => {
   if (!value) return "blocker";
   if (VALID_FAIL_ON_LEVELS.has(value as FailOnLevel)) return value as FailOnLevel;
-  throw new Error(`Invalid --fail-on value: ${value}. Expected blocker, risk, migration, win, or none.`);
+  throw new Error(`Invalid --fail-on value: ${value}. Expected blocker, risk, migration, or none.`);
+};
+
+const validateModeFlags = (flags: CliFlags): void => {
+  if (flags.json && flags.score) {
+    throw new Error("--json and --score cannot be used together.");
+  }
 };
 
 const parseCli = (argv: string[]): { directory: string; flags: CliFlags } => {
@@ -77,17 +82,20 @@ const parseCli = (argv: string[]): { directory: string; flags: CliFlags } => {
     process.exit(0);
   }
 
+  const flags: CliFlags = {
+    json: Boolean(parsed.values.json),
+    score: Boolean(parsed.values.score),
+    verbose: Boolean(parsed.values.verbose),
+    wins: Boolean(parsed.values.wins),
+    packageChecks: !parsed.values["no-package"],
+    codeChecks: !parsed.values["no-code"],
+    failOn: parseFailOn(parsed.values["fail-on"]),
+  };
+  validateModeFlags(flags);
+
   return {
     directory: path.resolve(parsed.positionals[0] ?? "."),
-    flags: {
-      json: Boolean(parsed.values.json),
-      score: Boolean(parsed.values.score),
-      verbose: Boolean(parsed.values.verbose),
-      wins: Boolean(parsed.values.wins),
-      packageChecks: !parsed.values["no-package"],
-      codeChecks: !parsed.values["no-code"],
-      failOn: parseFailOn(parsed.values["fail-on"]),
-    },
+    flags,
   };
 };
 
