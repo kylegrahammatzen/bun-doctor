@@ -1,0 +1,52 @@
+name: "Bun Doctor"
+description: "Scan JavaScript and TypeScript projects for Bun migration readiness"
+branding:
+  icon: "activity"
+  color: "orange"
+
+inputs:
+  directory:
+    description: "Project directory to scan"
+    default: "."
+  verbose:
+    description: "Show all diagnostics"
+    default: "true"
+  fail-on:
+    description: "Exit with error code on diagnostics: blocker, risk, migration, none"
+    default: "blocker"
+  node-version:
+    description: "Node.js version to use for running bun-doctor"
+    default: "22"
+
+outputs:
+  score:
+    description: "Bun Readiness score (0-100)"
+    value: ${{ steps.score.outputs.score }}
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - shell: bash
+      env:
+        INPUT_DIRECTORY: ${{ inputs.directory }}
+        INPUT_VERBOSE: ${{ inputs.verbose }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        FLAGS=("--fail-on" "$INPUT_FAIL_ON")
+        if [ "$INPUT_VERBOSE" = "true" ]; then FLAGS+=("--verbose"); fi
+        npx -y bun-doctor@latest "$INPUT_DIRECTORY" "${FLAGS[@]}"
+
+    - id: score
+      if: always()
+      shell: bash
+      env:
+        INPUT_DIRECTORY: ${{ inputs.directory }}
+      run: |
+        SCORE=$(npx -y bun-doctor@latest "$INPUT_DIRECTORY" --score --fail-on none 2>/dev/null | tail -1 | tr -d '[:space:]') || true
+        if [[ -n "$SCORE" && "$SCORE" =~ ^[0-9]+$ ]]; then
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+        fi
