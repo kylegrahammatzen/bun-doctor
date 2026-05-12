@@ -1,4 +1,5 @@
 import { defineConfig } from "tsdown";
+import packageJson from "./package.json" with { type: "json" };
 
 export default defineConfig({
   entry: {
@@ -11,4 +12,7 @@ export default defineConfig({
   platform: "node",
   sourcemap: true,
   target: "node20",
+  define: {
+    "process.env.VERSION": JSON.stringify(packageJson.version),
+  },
 });

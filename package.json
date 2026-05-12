@@ -1,6 +1,6 @@
 {
   "name": "bun-doctor",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Diagnose Node-to-Bun migration readiness for JavaScript and TypeScript projects",
   "keywords": [
     "bun",
@@ -22,7 +22,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "bun-doctor": "./dist/cli.mjs"
+    "bun-doctor": "bin/bun-doctor.js"
   },
   "exports": {
     ".": {
@@ -33,6 +33,7 @@
   },
   "files": [
     "dist",
+    "bin",
     "skills",
     "docs",
     "README.md",
@@ -42,6 +43,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
+    "prepack": "bun run build",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "bun run typecheck && bun test && bun run build"
