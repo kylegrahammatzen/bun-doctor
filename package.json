@@ -1,6 +1,6 @@
 {
   "name": "bun-doctor",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Diagnose Node-to-Bun migration readiness for JavaScript and TypeScript projects",
   "keywords": [
     "bun",
@@ -48,6 +48,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "bun run typecheck && bun test && bun run build",
     "docs:refresh": "bun run scripts/refresh-bun-docs.ts",
+    "version:bump": "bun run scripts/bump-version.ts",
     "version:sync": "bun run scripts/sync-skill-version.ts"
   },
   "engines": {
