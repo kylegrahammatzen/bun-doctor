@@ -1,4 +1,5 @@
 import path from "node:path";
+import pc from "picocolors";
 import type { Diagnostic, FindingCategory, ScanResult } from "./types.js";
 import { toRelativePath } from "./utils.js";
 
@@ -9,6 +10,20 @@ const LEVEL_SYMBOL: Record<Diagnostic["level"], string> = {
   risk: "!",
   migration: "~",
   win: "+",
+};
+
+const LEVEL_COLOR: Record<Diagnostic["level"], (input: string) => string> = {
+  blocker: pc.red,
+  risk: pc.yellow,
+  migration: pc.cyan,
+  win: pc.green,
+};
+
+const SCORE_COLOR: Record<ScanResult["score"]["label"], (input: string) => string> = {
+  Ready: pc.green,
+  Close: pc.yellow,
+  Risky: pc.magenta,
+  Blocked: pc.red,
 };
 
 const groupByCategory = (diagnostics: Diagnostic[]): Map<FindingCategory, Diagnostic[]> => {
@@ -28,16 +43,19 @@ const formatLocation = (diagnostic: Diagnostic, rootDirectory: string): string =
 
 export const formatTextReport = (result: ScanResult, verbose: boolean): string => {
   const lines: string[] = [];
-  lines.push(`bun-doctor`);
-  lines.push(`Project: ${result.project.packageName}`);
-  lines.push(`Bun Readiness: ${result.score.score}/100 (${result.score.label})`);
+  const scoreColor = SCORE_COLOR[result.score.label];
+  lines.push(pc.bold("bun-doctor"));
+  lines.push(`${pc.dim("Project:")} ${result.project.packageName}`);
   lines.push(
-    `Findings: ${result.summary.blockers} blockers, ${result.summary.risks} risks, ${result.summary.migrations} migration, ${result.summary.wins} wins`,
+    `${pc.dim("Bun Readiness:")} ${scoreColor(pc.bold(`${result.score.score}/100`))} ${pc.dim(`(${result.score.label})`)}`,
+  );
+  lines.push(
+    `${pc.dim("Findings:")} ${pc.red(`${result.summary.blockers} blockers`)}, ${pc.yellow(`${result.summary.risks} risks`)}, ${pc.cyan(`${result.summary.migrations} migration`)}, ${pc.green(`${result.summary.wins} wins`)}`,
   );
   lines.push("");
 
   if (result.diagnostics.length === 0) {
-    lines.push("No Bun migration findings.");
+    lines.push(pc.green("No Bun migration findings."));
     return lines.join("\n");
   }
 
@@ -45,24 +63,28 @@ export const formatTextReport = (result: ScanResult, verbose: boolean): string =
   for (const category of CATEGORY_ORDER) {
     const diagnostics = groups.get(category) ?? [];
     if (diagnostics.length === 0) continue;
-    lines.push(`${category} (${diagnostics.length})`);
+    const firstLevel = diagnostics[0]?.level;
+    const categoryColor = firstLevel ? LEVEL_COLOR[firstLevel] : pc.white;
+    lines.push(pc.bold(categoryColor(`${category} (${diagnostics.length})`)));
     const shownDiagnostics = verbose ? diagnostics : diagnostics.slice(0, 3);
     for (const diagnostic of shownDiagnostics) {
-      lines.push(`  ${LEVEL_SYMBOL[diagnostic.level]} ${diagnostic.title} [${diagnostic.ruleId}]`);
+      const symbol = LEVEL_COLOR[diagnostic.level](LEVEL_SYMBOL[diagnostic.level]);
+      lines.push(`  ${symbol} ${pc.bold(diagnostic.title)} ${pc.dim(`[${diagnostic.ruleId}]`)}`);
       lines.push(`    ${diagnostic.message}`);
-      if (diagnostic.replacement) lines.push(`    Replacement: ${diagnostic.replacement}`);
-      if (diagnostic.help) lines.push(`    ${diagnostic.help}`);
-      lines.push(`    ${formatLocation(diagnostic, result.project.rootDirectory)}`);
+      if (diagnostic.replacement) lines.push(`    ${pc.green(`→ ${diagnostic.replacement}`)}`);
+      if (diagnostic.help) lines.push(`    ${pc.dim(diagnostic.help)}`);
+      lines.push(`    ${pc.cyan(formatLocation(diagnostic, result.project.rootDirectory))}`);
       if (diagnostic.alsoIn && diagnostic.alsoIn.length > 0) {
         const aggregated = diagnostic.alsoIn
           .map((alsoPath) => toRelativePath(path.resolve(alsoPath), result.project.rootDirectory))
           .join(", ");
-        lines.push(`    Also in: ${aggregated}`);
+        lines.push(`    ${pc.dim(`Also in: ${aggregated}`)}`);
       }
-      lines.push(`    Source: ${diagnostic.sources[0]}`);
+      lines.push(`    ${pc.dim(`Source: ${diagnostic.sources[0]}`)}`);
     }
     if (!verbose && diagnostics.length > shownDiagnostics.length) {
-      lines.push(`  ... ${diagnostics.length - shownDiagnostics.length} more. Re-run with --verbose.`);
+      const hidden = diagnostics.length - shownDiagnostics.length;
+      lines.push(`  ${pc.dim(`... ${hidden} more — re-run with --verbose`)}`);
     }
     lines.push("");
   }
