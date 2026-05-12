@@ -11,6 +11,7 @@ interface CliFlags {
   json: boolean;
   score: boolean;
   verbose: boolean;
+  wins: boolean;
   packageChecks: boolean;
   codeChecks: boolean;
   failOn: FailOnLevel;
@@ -24,6 +25,7 @@ Options:
   --json                  output a structured JSON report
   --score                 output only the numeric score
   --verbose               show every diagnostic
+  --wins                  show optional Bun-native wins
   --no-package            skip package/config/dependency checks
   --no-code               skip source code checks
   --fail-on <level>       exit non-zero on blocker, risk, migration, or none
@@ -56,6 +58,7 @@ const parseCli = (argv: string[]): { directory: string; flags: CliFlags } => {
       json: { type: "boolean", default: false },
       score: { type: "boolean", default: false },
       verbose: { type: "boolean", default: false },
+      wins: { type: "boolean", default: false },
       "no-package": { type: "boolean", default: false },
       "no-code": { type: "boolean", default: false },
       "fail-on": { type: "string", default: "blocker" },
@@ -80,6 +83,7 @@ const parseCli = (argv: string[]): { directory: string; flags: CliFlags } => {
       json: Boolean(parsed.values.json),
       score: Boolean(parsed.values.score),
       verbose: Boolean(parsed.values.verbose),
+      wins: Boolean(parsed.values.wins),
       packageChecks: !parsed.values["no-package"],
       codeChecks: !parsed.values["no-code"],
       failOn: parseFailOn(parsed.values["fail-on"]),
@@ -127,7 +131,7 @@ const main = async (): Promise<void> => {
   } else if (flags.json) {
     process.stdout.write(`${JSON.stringify(toJsonReport(result), null, 2)}\n`);
   } else {
-    process.stdout.write(`${formatTextReport(result, flags.verbose)}\n`);
+    process.stdout.write(`${formatTextReport(result, { verbose: flags.verbose, showWins: flags.wins })}\n`);
   }
 
   const levels = new Set(result.diagnostics.map((diagnostic) => diagnostic.level));

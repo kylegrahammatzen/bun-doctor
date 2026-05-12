@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import type {
@@ -221,6 +222,25 @@ const findPackageJsonPath = (startDirectory: string): string => {
   throw new Error(`No package.json found in ${startDirectory}`);
 };
 
+const normalizeGitRemoteUrl = (remoteUrl: string): string => {
+  const trimmedRemoteUrl = remoteUrl.trim();
+  const sshMatch = trimmedRemoteUrl.match(/^git@([^:]+):(.+)$/);
+  if (sshMatch?.[1] && sshMatch[2]) {
+    return `https://${sshMatch[1]}/${sshMatch[2].replace(/\.git$/, "")}`;
+  }
+  return trimmedRemoteUrl.replace(/^git\+/, "").replace(/\.git$/, "");
+};
+
+const resolveGitRemoteUrl = (rootDirectory: string, remoteName: string): string | null => {
+  const result = spawnSync("git", ["remote", "get-url", remoteName], {
+    cwd: rootDirectory,
+    encoding: "utf8",
+  });
+  if (result.error || result.status !== 0) return null;
+  const remoteUrl = result.stdout.trim();
+  return remoteUrl.length > 0 ? normalizeGitRemoteUrl(remoteUrl) : null;
+};
+
 export const discoverProject = (directory: string): ProjectInfo => {
   const rootDirectory = path.resolve(directory);
   const packageJsonPath = findPackageJsonPath(rootDirectory);
@@ -244,6 +264,8 @@ export const discoverProject = (directory: string): ProjectInfo => {
 
   return {
     rootDirectory,
+    gitRepositoryUrl: resolveGitRemoteUrl(rootDirectory, "origin"),
+    gitUpstreamUrl: resolveGitRemoteUrl(rootDirectory, "upstream"),
     packageJsonPath,
     packageJson,
     packageName: packageJson.name ?? path.basename(rootDirectory),

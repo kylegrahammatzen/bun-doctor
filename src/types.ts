@@ -66,6 +66,8 @@ export interface BunfigInfo {
 
 export interface ProjectInfo {
   rootDirectory: string;
+  gitRepositoryUrl: string | null;
+  gitUpstreamUrl: string | null;
   packageJsonPath: string;
   packageJson: PackageJson;
   packageName: string;
