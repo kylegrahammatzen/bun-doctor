@@ -6,5 +6,7 @@ coverage/
 .env
 .env.*
 !.env.example
+!CLAUDE.md
+!README.md
 !docs/**/*.md
 !skills/**/*.md
