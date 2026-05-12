@@ -46,7 +46,8 @@
     "prepack": "bun run build",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "check": "bun run typecheck && bun test && bun run build"
+    "check": "bun run typecheck && bun test && bun run build",
+    "docs:refresh": "bun run scripts/refresh-bun-docs.ts"
   },
   "engines": {
     "node": ">=20"
@@ -57,5 +58,8 @@
     "@types/node": "^24.10.1",
     "tsdown": "^0.22.0",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "smol-toml": "^1.6.1"
   }
 }

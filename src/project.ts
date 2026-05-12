@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { parse as parseToml } from "smol-toml";
 import type {
   BunfigInfo,
   PackageJson,
@@ -8,7 +9,7 @@ import type {
   SourceFile,
   WorkflowFile,
 } from "./types.js";
-import { collectFiles, fileExists, isSourceFilePath, readJsonFile } from "./utils.js";
+import { collectFiles, fileExists, isPlainObject, isSourceFilePath, readJsonFile, wildcardToRegExp } from "./utils.js";
 
 const LOCKFILE_NAMES = ["bun.lock", "bun.lockb"];
 const LEGACY_LOCKFILE_NAMES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"];
@@ -21,25 +22,101 @@ const collectDependencies = (packageJson: PackageJson): Record<string, string> =
   ...packageJson.dependencies,
 });
 
+const readManifestContent = (packageJsonPath: string): string => {
+  try {
+    return fs.readFileSync(packageJsonPath, "utf8");
+  } catch {
+    return "";
+  }
+};
+
 const toPackageManifest = (packageJsonPath: string, packageJson: PackageJson): PackageManifest => ({
   packageJsonPath,
   packageJson,
   packageName: packageJson.name ?? path.basename(path.dirname(packageJsonPath)),
   dependencies: collectDependencies(packageJson),
   trustedDependencies: new Set(packageJson.trustedDependencies ?? []),
+  manifestContent: readManifestContent(packageJsonPath),
 });
+
+const extractPackageJsonWorkspaceGlobs = (packageJson: PackageJson): string[] => {
+  const workspaces = packageJson.workspaces;
+  if (Array.isArray(workspaces)) return workspaces;
+  if (isPlainObject(workspaces) && Array.isArray(workspaces.packages)) return workspaces.packages as string[];
+  return [];
+};
+
+const parsePnpmWorkspaceGlobs = (content: string): string[] => {
+  const globs: string[] = [];
+  let inPackagesBlock = false;
+  let packagesIndent = -1;
+  for (const rawLine of content.split(/\r?\n/)) {
+    if (/^\s*#/.test(rawLine)) continue;
+    if (rawLine.trim() === "") continue;
+    const leadingWhitespace = rawLine.length - rawLine.trimStart().length;
+    if (/^packages\s*:\s*$/.test(rawLine.trimEnd())) {
+      inPackagesBlock = true;
+      packagesIndent = leadingWhitespace;
+      continue;
+    }
+    if (!inPackagesBlock) continue;
+    if (leadingWhitespace <= packagesIndent) {
+      inPackagesBlock = false;
+      continue;
+    }
+    const itemMatch = rawLine.match(/^\s*-\s*["']?([^"']+?)["']?\s*$/);
+    if (itemMatch?.[1]) globs.push(itemMatch[1]);
+  }
+  return globs;
+};
+
+interface SplitGlobs {
+  positive: string[];
+  negative: string[];
+}
+
+const splitGlobs = (globs: string[]): SplitGlobs => {
+  const positive: string[] = [];
+  const negative: string[] = [];
+  for (const glob of globs) {
+    if (glob.startsWith("!")) negative.push(glob.slice(1));
+    else positive.push(glob);
+  }
+  return { positive, negative };
+};
+
+const pathMatchesAnyGlob = (relativePath: string, globs: string[]): boolean => {
+  for (const glob of globs) {
+    if (wildcardToRegExp(glob).test(relativePath)) return true;
+  }
+  return false;
+};
+
+const isWorkspacePath = (relativePath: string, splitWorkspaceGlobs: SplitGlobs): boolean =>
+  pathMatchesAnyGlob(relativePath, splitWorkspaceGlobs.positive) &&
+  !pathMatchesAnyGlob(relativePath, splitWorkspaceGlobs.negative);
 
 const collectPackageManifests = (
   rootDirectory: string,
   rootPackageJsonPath: string,
   rootPackageJson: PackageJson,
+  workspaceGlobs: string[],
 ): PackageManifest[] => {
   const rootManifest = toPackageManifest(rootPackageJsonPath, rootPackageJson);
+  if (workspaceGlobs.length === 0) return [rootManifest];
+
+  const splitWorkspaceGlobs = splitGlobs(workspaceGlobs);
+  if (splitWorkspaceGlobs.positive.length === 0) return [rootManifest];
+
   const manifestPaths = collectFiles(
     rootDirectory,
     (filePath) => path.basename(filePath) === "package.json" && filePath !== rootPackageJsonPath,
   );
   const workspaceManifests = manifestPaths.flatMap((manifestPath) => {
+    const relativeDirectory = path
+      .relative(rootDirectory, path.dirname(manifestPath))
+      .replaceAll(path.sep, "/");
+    if (!isWorkspacePath(relativeDirectory, splitWorkspaceGlobs)) return [];
     const packageJson = readJsonFile<PackageJson>(manifestPath);
     if (!packageJson || typeof packageJson !== "object" || Array.isArray(packageJson)) return [];
     return [toPackageManifest(manifestPath, packageJson)];
@@ -65,28 +142,47 @@ const mergeTrustedDependencies = (manifests: PackageManifest[]): Set<string> => 
   return trustedDependencies;
 };
 
-const parseBooleanTomlValue = (content: string, key: string): boolean | undefined => {
-  const match = content.match(new RegExp(`^\\s*${key}\\s*=\\s*(true|false)\\s*$`, "m"));
-  if (!match?.[1]) return undefined;
-  return match[1] === "true";
+const getTomlSection = (parsed: Record<string, unknown>, sectionPath: string[]): Record<string, unknown> | null => {
+  let current: unknown = parsed;
+  for (const segment of sectionPath) {
+    if (!isPlainObject(current)) return null;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return isPlainObject(current) ? (current as Record<string, unknown>) : null;
 };
 
-const parseStringTomlValue = (content: string, key: string): string | undefined => {
-  const match = content.match(new RegExp(`^\\s*${key}\\s*=\\s*["']([^"']+)["']\\s*$`, "m"));
-  return match?.[1];
+const readBooleanField = (section: Record<string, unknown> | null, key: string): boolean | undefined => {
+  const value = section?.[key];
+  return typeof value === "boolean" ? value : undefined;
+};
+
+const readStringField = (section: Record<string, unknown> | null, key: string): string | undefined => {
+  const value = section?.[key];
+  return typeof value === "string" ? value : undefined;
 };
 
 const parseBunfig = (rootDirectory: string): BunfigInfo | null => {
   const filePath = path.join(rootDirectory, "bunfig.toml");
   if (!fileExists(filePath)) return null;
   const content = fs.readFileSync(filePath, "utf8");
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = parseToml(content) as Record<string, unknown>;
+  } catch {
+    return { filePath, content };
+  }
+
+  const installSection = getTomlSection(parsed, ["install"]);
+  const securitySection = getTomlSection(parsed, ["install", "security"]);
+
   return {
     filePath,
     content,
-    installIgnoreScripts: parseBooleanTomlValue(content, "ignoreScripts"),
-    installFrozenLockfile: parseBooleanTomlValue(content, "frozenLockfile"),
-    installAuto: parseStringTomlValue(content, "auto"),
-    installSecurityScanner: parseStringTomlValue(content, "scanner"),
+    installIgnoreScripts: readBooleanField(installSection, "ignoreScripts"),
+    installFrozenLockfile: readBooleanField(installSection, "frozenLockfile"),
+    installAuto: readStringField(installSection, "auto"),
+    installSecurityScanner: readStringField(securitySection, "scanner"),
   };
 };
 
@@ -104,11 +200,19 @@ const readWorkflowFiles = (rootDirectory: string): WorkflowFile[] => {
   );
 };
 
-const readTsconfig = (rootDirectory: string): { path: string | null; config: Record<string, unknown> | null } => {
+const readTsconfig = (
+  rootDirectory: string,
+): { path: string | null; config: Record<string, unknown> | null; content: string | null } => {
   const tsconfigPath = path.join(rootDirectory, "tsconfig.json");
-  if (!fileExists(tsconfigPath)) return { path: null, config: null };
+  if (!fileExists(tsconfigPath)) return { path: null, config: null, content: null };
   const config = readJsonFile<Record<string, unknown>>(tsconfigPath);
-  return { path: tsconfigPath, config };
+  let content: string | null = null;
+  try {
+    content = fs.readFileSync(tsconfigPath, "utf8");
+  } catch {
+    content = null;
+  }
+  return { path: tsconfigPath, config, content };
 };
 
 const findPackageJsonPath = (startDirectory: string): string => {
@@ -129,9 +233,14 @@ export const discoverProject = (directory: string): ProjectInfo => {
   const legacyLockfiles = LEGACY_LOCKFILE_NAMES.filter((lockfileName) =>
     fileExists(path.join(rootDirectory, lockfileName)),
   );
-  const packageManifests = collectPackageManifests(rootDirectory, packageJsonPath, packageJson);
-  const tsconfig = readTsconfig(rootDirectory);
   const pnpmWorkspacePath = path.join(rootDirectory, "pnpm-workspace.yaml");
+  const pnpmWorkspaceContent = fileExists(pnpmWorkspacePath) ? fs.readFileSync(pnpmWorkspacePath, "utf8") : null;
+  const workspaceGlobs = [
+    ...extractPackageJsonWorkspaceGlobs(packageJson),
+    ...(pnpmWorkspaceContent ? parsePnpmWorkspaceGlobs(pnpmWorkspaceContent) : []),
+  ];
+  const packageManifests = collectPackageManifests(rootDirectory, packageJsonPath, packageJson, workspaceGlobs);
+  const tsconfig = readTsconfig(rootDirectory);
 
   return {
     rootDirectory,
@@ -146,8 +255,10 @@ export const discoverProject = (directory: string): ProjectInfo => {
     bunfig: parseBunfig(rootDirectory),
     tsconfigPath: tsconfig.path,
     tsconfig: tsconfig.config,
+    tsconfigContent: tsconfig.content,
     workflows: readWorkflowFiles(rootDirectory),
     sourceFiles: readSourceFiles(rootDirectory),
-    pnpmWorkspacePath: fileExists(pnpmWorkspacePath) ? pnpmWorkspacePath : null,
+    pnpmWorkspacePath: pnpmWorkspaceContent ? pnpmWorkspacePath : null,
+    pnpmWorkspaceContent,
   };
 };

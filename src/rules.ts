@@ -2,13 +2,14 @@ import path from "node:path";
 import { BUN_DOCS } from "./constants.js";
 import { COMPAT_DB } from "./compat-db.js";
 import type {
+  CompatEntry,
   Diagnostic,
   FindingCategory,
   FindingLevel,
   PackageManifest,
   ProjectInfo,
 } from "./types.js";
-import { findLineNumber, isPlainObject } from "./utils.js";
+import { escapeRegExp, findLineNumber, isPlainObject } from "./utils.js";
 
 const CATEGORY_BY_LEVEL: Record<FindingLevel, FindingCategory> = {
   blocker: "Blockers",
@@ -27,6 +28,8 @@ interface DiagnosticInput {
   line?: number;
   help?: string;
   packageName?: string;
+  replacement?: string;
+  alsoIn?: string[];
 }
 
 interface CodeRule {
@@ -34,6 +37,7 @@ interface CodeRule {
   title: string;
   level: FindingLevel;
   pattern: RegExp;
+  requiresPattern?: RegExp;
   message: string;
   sources: string[];
   help?: string;
@@ -54,8 +58,55 @@ const createDiagnostic = (input: DiagnosticInput): Diagnostic => {
     sources: input.sources,
     help: input.help,
     packageName: input.packageName,
+    replacement: input.replacement,
+    alsoIn: input.alsoIn,
   };
 };
+
+const buildCompatHelp = (entry: CompatEntry, needsTrust: boolean): string | undefined => {
+  if (needsTrust) {
+    return `Add ${entry.packageName} to trustedDependencies before relying on its install scripts.`;
+  }
+  return entry.migrationHint ?? entry.workaround;
+};
+
+const findKeyLine = (content: string | null, key: string): number => {
+  if (!content) return 1;
+  return findLineNumber(content, new RegExp(`"${escapeRegExp(key)}"\\s*:`));
+};
+
+const findYamlKeyLine = (content: string | null, key: string): number => {
+  if (!content) return 1;
+  return findLineNumber(content, new RegExp(`^\\s*${escapeRegExp(key)}\\s*:`, "m"));
+};
+
+const findCatalogReferenceLine = (manifestContent: string | null): number => {
+  if (!manifestContent) return 1;
+  return findLineNumber(manifestContent, /"catalog:/);
+};
+
+const findDependencyLine = (manifestContent: string, packageName: string): number =>
+  findKeyLine(manifestContent, packageName);
+
+const createCompatDiagnostic = (
+  entry: CompatEntry,
+  manifest: PackageManifest,
+  needsTrust: boolean,
+  alsoIn?: string[],
+): Diagnostic =>
+  createDiagnostic({
+    ruleId: `compat/${entry.packageName}`,
+    title: `${entry.packageName} compatibility note`,
+    level: entry.severity,
+    message: entry.reason,
+    filePath: manifest.packageJsonPath,
+    line: findDependencyLine(manifest.manifestContent, entry.packageName),
+    sources: entry.sources,
+    packageName: entry.packageName,
+    replacement: entry.replacement,
+    help: buildCompatHelp(entry, needsTrust),
+    alsoIn,
+  });
 
 const getCompilerOptions = (project: ProjectInfo): Record<string, unknown> => {
   const compilerOptions = project.tsconfig?.compilerOptions;
@@ -92,6 +143,7 @@ const workflowUsesUnfrozenBunInstall = (content: string): boolean =>
 export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
   const diagnostics: Diagnostic[] = [];
   const packageJsonPath = project.packageJsonPath;
+  const rootManifestContent = project.packageManifests[0]?.manifestContent ?? "";
   const hasBunLock = project.lockfiles.includes("bun.lock");
   const hasBunLockb = project.lockfiles.includes("bun.lockb");
   const hasAnyBunLock = hasBunLock || hasBunLockb;
@@ -102,7 +154,7 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
         ruleId: "bun/lockfile-missing",
         title: "Missing Bun lockfile",
         level: "migration",
-        message: "This project has no bun.lock. Commit Bun's lockfile before treating installs or CI as reproducible under Bun.",
+        message: "This project has no bun.lock, so installs and Bun CI cannot be treated as reproducible.",
         filePath: packageJsonPath,
         sources: [BUN_DOCS.lockfile],
         help: "Run bun install and commit bun.lock.",
@@ -116,7 +168,7 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
         ruleId: "bun/legacy-lockb",
         title: "Legacy binary Bun lockfile",
         level: "migration",
-        message: "bun.lockb is the legacy binary lockfile format. Bun v1.2 defaults to the text-based bun.lock.",
+        message: "bun.lockb is the legacy binary lockfile format, superseded by the text-based bun.lock in Bun v1.2+.",
         filePath: path.join(project.rootDirectory, "bun.lockb"),
         sources: [BUN_DOCS.lockfile],
         help: "Migrate with bun install --save-text-lockfile --frozen-lockfile --lockfile-only, then remove bun.lockb after verification.",
@@ -130,7 +182,7 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
         ruleId: "bun/mixed-lockfiles",
         title: "Mixed package-manager lockfiles",
         level: "risk",
-        message: `Bun lockfile exists alongside ${project.legacyLockfiles.join(", ")}. Mixed lockfiles make it unclear which package manager owns dependency resolution.`,
+        message: `Bun lockfile coexists with ${project.legacyLockfiles.join(", ")}, leaving dependency resolution ownership ambiguous.`,
         filePath: packageJsonPath,
         sources: [BUN_DOCS.lockfile],
         help: "Keep legacy lockfiles only if another supported workflow still owns them; otherwise remove them after validating bun.lock.",
@@ -146,6 +198,7 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
         level: "migration",
         message: "package.json does not pin Bun in packageManager, so contributors and CI may use different package managers.",
         filePath: packageJsonPath,
+        line: project.packageJson.packageManager ? findKeyLine(rootManifestContent, "packageManager") : 1,
         sources: [BUN_DOCS.lockfile],
         help: "Set packageManager to the Bun version used by the project, for example bun@1.3.11.",
       }),
@@ -158,8 +211,9 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
         ruleId: "bun/pnpm-workspace-only",
         title: "Workspaces only declared for pnpm",
         level: "blocker",
-        message: "Bun reads workspaces from package.json. A pnpm-workspace.yaml without package.json workspaces will not define Bun workspaces.",
+        message: "Bun reads workspaces from package.json, so a pnpm-workspace.yaml without a matching package.json workspaces entry will not define Bun workspaces.",
         filePath: project.pnpmWorkspacePath,
+        line: findYamlKeyLine(project.pnpmWorkspaceContent, "packages"),
         sources: [BUN_DOCS.workspaces],
         help: "Move workspace globs into package.json workspaces before relying on bun install at the repo root.",
       }),
@@ -174,6 +228,7 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
         level: "blocker",
         message: "This project uses catalog: dependency references, but no Bun catalog or catalogs definition was found in package.json.",
         filePath: packageJsonPath,
+        line: findCatalogReferenceLine(rootManifestContent),
         sources: [BUN_DOCS.catalogs],
         help: "Define catalog or catalogs in package.json, preferably under workspaces for monorepos.",
       }),
@@ -251,6 +306,7 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
         level: "risk",
         message: "@types/bun is installed, but compilerOptions.types does not include bun. TypeScript 6+ requires explicit Bun types in this mode.",
         filePath: project.tsconfigPath ?? packageJsonPath,
+        line: findKeyLine(project.tsconfigContent, "types"),
         sources: [BUN_DOCS.typescript],
         help: "Add \"bun\" to compilerOptions.types or remove types if you do not need to restrict global type packages.",
       }),
@@ -263,7 +319,7 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
         ruleId: "bun/auto-install-enabled",
         title: "Bun auto-install is enabled",
         level: "risk",
-        message: `bunfig.toml sets install.auto to ${project.bunfig.installAuto}. Auto-install can fetch packages during execution when node_modules is absent.`,
+        message: `bunfig.toml sets install.auto to ${project.bunfig.installAuto}, letting Bun fetch packages during execution when node_modules is absent.`,
         filePath: project.bunfig.filePath,
         line: findLineNumber(project.bunfig.content, /auto\s*=/),
         sources: [BUN_DOCS.autoInstall, BUN_DOCS.bunfig],
@@ -273,36 +329,25 @@ export const runPackageRules = (project: ProjectInfo): Diagnostic[] => {
   }
 
   for (const entry of COMPAT_DB) {
-    for (const manifest of findDependencyManifests(project, entry.packageName)) {
-      diagnostics.push(
-        createDiagnostic({
-          ruleId: `compat/${entry.packageName}`,
-          title: `${entry.packageName} compatibility note`,
-          level: entry.severity,
-          message: entry.reason,
-          filePath: manifest.packageJsonPath,
-          sources: entry.sources,
-          packageName: entry.packageName,
-          help: [entry.replacement ? `Replacement: ${entry.replacement}.` : "", entry.workaround, entry.migrationHint]
-            .filter(Boolean)
-            .join(" "),
-        }),
-      );
+    const matchingManifests = findDependencyManifests(project, entry.packageName);
+    if (matchingManifests.length === 0) continue;
 
-      if (entry.requiresTrustedDependency && !manifest.trustedDependencies.has(entry.packageName)) {
-        diagnostics.push(
-          createDiagnostic({
-            ruleId: `bun/trusted-dependency/${entry.packageName}`,
-            title: `${entry.packageName} may need trustedDependencies`,
-            level: "risk",
-            message: `${entry.packageName} can require lifecycle scripts, but it is not listed in trustedDependencies. Bun does not run arbitrary lifecycle scripts by default.`,
-            filePath: manifest.packageJsonPath,
-            sources: [BUN_DOCS.lifecycle],
-            packageName: entry.packageName,
-            help: `If you keep ${entry.packageName}, verify whether it needs install scripts and add it to trustedDependencies only after review.`,
-          }),
-        );
-      }
+    if (entry.severity === "win") {
+      const [primaryManifest, ...otherManifests] = matchingManifests;
+      if (!primaryManifest) continue;
+      const isTrustedEverywhere = matchingManifests.every((manifest) =>
+        manifest.trustedDependencies.has(entry.packageName),
+      );
+      const needsTrust = Boolean(entry.requiresTrustedDependency) && !isTrustedEverywhere;
+      const alsoIn = otherManifests.map((manifest) => manifest.packageJsonPath);
+      diagnostics.push(createCompatDiagnostic(entry, primaryManifest, needsTrust, alsoIn));
+      continue;
+    }
+
+    for (const manifest of matchingManifests) {
+      const needsTrust =
+        Boolean(entry.requiresTrustedDependency) && !manifest.trustedDependencies.has(entry.packageName);
+      diagnostics.push(createCompatDiagnostic(entry, manifest, needsTrust));
     }
   }
 
@@ -349,7 +394,7 @@ const CODE_RULES: CodeRule[] = [
     title: "Node process API is not implemented in Bun",
     level: "blocker",
     pattern: /\bprocess\.(loadEnvFile|getBuiltinModule)\s*\(/,
-    message: "Bun's compatibility docs list process.loadEnvFile and process.getBuiltinModule as not implemented.",
+    message: "Bun marks process.loadEnvFile and process.getBuiltinModule as not implemented in its Node compatibility docs.",
     sources: [BUN_DOCS.nodeCompatibility],
   },
   {
@@ -357,8 +402,8 @@ const CODE_RULES: CodeRule[] = [
     title: "module.register is not implemented in Bun",
     level: "blocker",
     pattern: /\bmodule\.register\s*\(/,
-    message: "Bun's compatibility docs list module.register as not implemented and recommend Bun.plugin in the meantime.",
-    sources: [BUN_DOCS.nodeCompatibility, "https://bun.com/docs/runtime/plugins"],
+    message: "Bun lists module.register as not implemented and recommends Bun.plugin instead.",
+    sources: [BUN_DOCS.nodeCompatibility, BUN_DOCS.plugins],
     help: "Evaluate Bun.plugin or avoid runtime module loader hooks in Bun-targeted code.",
   },
   {
@@ -366,7 +411,7 @@ const CODE_RULES: CodeRule[] = [
     title: "node:test is only partly implemented in Bun",
     level: "migration",
     pattern: /(?:from\s+["']node:test["']|require\(["']node:test["']\))/,
-    message: "Bun's compatibility docs mark node:test as partly implemented. Bun has its own bun:test runner.",
+    message: "Bun marks node:test as partly implemented and provides bun:test as its native runner.",
     sources: [BUN_DOCS.nodeCompatibility, BUN_DOCS.testRunner],
     help: "Prefer bun:test when migrating the test runner to Bun.",
   },
@@ -384,7 +429,8 @@ const CODE_RULES: CodeRule[] = [
     title: "worker_threads resource limits are unsupported",
     level: "risk",
     pattern: /\bresourceLimits\s*:/,
-    message: "Bun's worker_threads compatibility notes list resourceLimits as unsupported.",
+    requiresPattern: /(?:from\s+["']node:worker_threads["']|require\(["']node:worker_threads["']\)|from\s+["']worker_threads["']|require\(["']worker_threads["']\)|\bnew\s+Worker\s*\()/,
+    message: "Bun marks worker_threads resourceLimits as unsupported in its Node compatibility notes.",
     sources: [BUN_DOCS.nodeCompatibility],
     help: "Verify worker behavior under Bun or avoid Node-specific Worker options.",
   },
@@ -395,6 +441,7 @@ export const runCodeRules = (project: ProjectInfo): Diagnostic[] => {
 
   for (const sourceFile of project.sourceFiles) {
     for (const rule of CODE_RULES) {
+      if (rule.requiresPattern && !rule.requiresPattern.test(sourceFile.content)) continue;
       if (!rule.pattern.test(sourceFile.content)) continue;
       diagnostics.push(
         createDiagnostic({

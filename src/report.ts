@@ -23,7 +23,7 @@ const groupByCategory = (diagnostics: Diagnostic[]): Map<FindingCategory, Diagno
 
 const formatLocation = (diagnostic: Diagnostic, rootDirectory: string): string => {
   const relativePath = toRelativePath(path.resolve(diagnostic.filePath), rootDirectory);
-  return diagnostic.line > 0 ? `${relativePath}:${diagnostic.line}` : relativePath;
+  return diagnostic.line > 1 ? `${relativePath}:${diagnostic.line}` : relativePath;
 };
 
 export const formatTextReport = (result: ScanResult, verbose: boolean): string => {
@@ -50,8 +50,15 @@ export const formatTextReport = (result: ScanResult, verbose: boolean): string =
     for (const diagnostic of shownDiagnostics) {
       lines.push(`  ${LEVEL_SYMBOL[diagnostic.level]} ${diagnostic.title} [${diagnostic.ruleId}]`);
       lines.push(`    ${diagnostic.message}`);
+      if (diagnostic.replacement) lines.push(`    Replacement: ${diagnostic.replacement}`);
       if (diagnostic.help) lines.push(`    ${diagnostic.help}`);
       lines.push(`    ${formatLocation(diagnostic, result.project.rootDirectory)}`);
+      if (diagnostic.alsoIn && diagnostic.alsoIn.length > 0) {
+        const aggregated = diagnostic.alsoIn
+          .map((alsoPath) => toRelativePath(path.resolve(alsoPath), result.project.rootDirectory))
+          .join(", ");
+        lines.push(`    Also in: ${aggregated}`);
+      }
       lines.push(`    Source: ${diagnostic.sources[0]}`);
     }
     if (!verbose && diagnostics.length > shownDiagnostics.length) {

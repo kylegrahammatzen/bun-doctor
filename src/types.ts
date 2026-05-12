@@ -32,13 +32,13 @@ export interface BunDoctorConfig {
 export interface CompatEntry {
   packageName: string;
   severity: FindingLevel;
-  affectedRanges: string[];
-  bunVersions: string[];
-  platforms: Array<"darwin" | "linux" | "win32" | "all">;
   confidence: "high" | "medium" | "low";
   reason: string;
   sources: string[];
   lastVerified: string;
+  affectedRanges?: string[];
+  bunVersions?: string[];
+  platforms?: Array<"darwin" | "linux" | "win32" | "all">;
   replacement?: string;
   workaround?: string;
   migrationHint?: string;
@@ -77,9 +77,11 @@ export interface ProjectInfo {
   bunfig: BunfigInfo | null;
   tsconfigPath: string | null;
   tsconfig: Record<string, unknown> | null;
+  tsconfigContent: string | null;
   workflows: WorkflowFile[];
   sourceFiles: SourceFile[];
   pnpmWorkspacePath: string | null;
+  pnpmWorkspaceContent: string | null;
 }
 
 export interface PackageManifest {
@@ -88,6 +90,7 @@ export interface PackageManifest {
   packageName: string;
   dependencies: Record<string, string>;
   trustedDependencies: Set<string>;
+  manifestContent: string;
 }
 
 export interface Diagnostic {
@@ -101,6 +104,8 @@ export interface Diagnostic {
   sources: string[];
   help?: string;
   packageName?: string;
+  replacement?: string;
+  alsoIn?: string[];
 }
 
 export interface ScoreResult {

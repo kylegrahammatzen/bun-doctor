@@ -81,6 +81,8 @@ export const findLineNumber = (content: string, pattern: RegExp): number => {
   return 1;
 };
 
+export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export const wildcardToRegExp = (pattern: string): RegExp => {
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
