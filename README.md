@@ -5,6 +5,8 @@
 
 Scan a Node.js project to see how ready it is to move to Bun.
 
+Inspired by [React Doctor](https://github.com/millionco/react-doctor) by Million Software, Inc.
+
 ```bash
 npx -y bun-doctor@latest .
 ```
