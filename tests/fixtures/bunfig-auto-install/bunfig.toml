@@ -1,0 +1,7 @@
+# Realistic bunfig with nested [install] section.
+[install]
+auto = "fallback"
+frozenLockfile = false
+
+[install.security]
+scanner = "@example/scanner"

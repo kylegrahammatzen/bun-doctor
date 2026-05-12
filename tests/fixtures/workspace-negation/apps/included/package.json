@@ -1,0 +1,6 @@
+{
+  "name": "included",
+  "dependencies": {
+    "sqlite3": "^5.0.0"
+  }
+}

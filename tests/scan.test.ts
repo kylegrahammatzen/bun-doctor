@@ -28,4 +28,22 @@ describe("scan", () => {
     );
     expect(sqliteDiagnostic?.filePath.replaceAll("\\", "/")).toContain("apps/api/package.json");
   });
+
+  test("parses nested bunfig.toml sections via real TOML", async () => {
+    const result = await scan(fixturePath("bunfig-auto-install"));
+    const ruleIds = result.diagnostics.map((diagnostic) => diagnostic.ruleId);
+    expect(ruleIds).toContain("bun/auto-install-enabled");
+    expect(result.project.bunfig?.installAuto).toBe("fallback");
+    expect(result.project.bunfig?.installFrozenLockfile).toBe(false);
+    expect(result.project.bunfig?.installSecurityScanner).toBe("@example/scanner");
+  });
+
+  test("respects workspace negation globs and ignores out-of-workspace manifests", async () => {
+    const result = await scan(fixturePath("workspace-negation"));
+    const ruleIds = result.diagnostics.map((diagnostic) => diagnostic.ruleId);
+
+    expect(ruleIds).toContain("compat/sqlite3");
+    expect(ruleIds).not.toContain("compat/better-sqlite3");
+    expect(ruleIds).not.toContain("compat/node-sass");
+  });
 });

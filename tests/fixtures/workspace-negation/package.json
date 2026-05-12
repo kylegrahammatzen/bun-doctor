@@ -1,0 +1,6 @@
+{
+  "name": "workspace-negation",
+  "private": true,
+  "packageManager": "bun@1.3.11",
+  "workspaces": ["apps/*", "!apps/excluded"]
+}
